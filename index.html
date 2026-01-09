@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alba's Progress - Parent Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .tab-active { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+    .loading { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  </style>
+</head>
+<body class="bg-gray-900 min-h-screen">
+  <div id="app"></div>
+
+  <script>
+    // STAGING CONFIG
+    const CONFIG = {
+      GIST_ID: 'c7d833305a1f527c65da66978ed82a06',
+      PARENT_PIN: '3521',
+      ENV: 'STAGING'
+    };
+
+    let appState = {
+      pinVerified: false,
+      activeTab: 'overview',
+      data: null,
+      loading: true,
+      lastUpdated: null
+    };
+
+    // Load data from Gist
+    async function loadData() {
+      try {
+        const res = await fetch(`https://api.github.com/gists/${CONFIG.GIST_ID}`);
+        if (!res.ok) throw new Error('Failed to fetch');
+        const gist = await res.json();
+        const data = JSON.parse(gist.files['alba-spelling-data.json'].content);
+        appState.data = data;
+        appState.lastUpdated = new Date();
+        appState.loading = false;
+        render();
+      } catch (e) {
+        console.error('Load error:', e);
+        appState.loading = false;
+        render();
+      }
+    }
+
+    // PIN Entry Screen
+    function renderPinEntry() {
+      return `
+        <div class="min-h-screen flex items-center justify-center p-4">
+          <div class="bg-white rounded-2xl p-8 max-w-sm w-full shadow-2xl">
+            <div class="text-center mb-6">
+              <span class="text-6xl">👨‍👩‍👧</span>
+              <h1 class="text-2xl font-bold text-gray-800 mt-4">Parent Portal</h1>
+              <p class="text-gray-500 mt-2">Enter PIN to view Alba's progress</p>
+              <p class="text-xs text-gray-400 mt-1">${CONFIG.ENV}</p>
+            </div>
+            <div id="pin-display" class="flex justify-center gap-3 mb-6">
+              ${[0,1,2,3].map(i => `<div class="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center text-2xl font-bold text-indigo-600 pin-dot" data-index="${i}"></div>`).join('')}
+            </div>
+            <div id="pin-error" class="text-red-500 text-center text-sm mb-4 hidden">Incorrect PIN</div>
+            <div class="grid grid-cols-3 gap-3">
+              ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(n => n === '' ? '<div></div>' : `
+                <button onclick="handlePinInput('${n}')" class="h-14 rounded-xl text-xl font-bold ${n === '⌫' ? 'bg-gray-200 text-gray-600' : 'bg-indigo-100 text-indigo-700'} active:scale-95 transition-transform">
+                  ${n}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    let pinInput = '';
+    function handlePinInput(val) {
+      if (val === '⌫') {
+        pinInput = pinInput.slice(0, -1);
+      } else if (pinInput.length < 4) {
+        pinInput += val;
+      }
+
+      // Update display
+      document.querySelectorAll('.pin-dot').forEach((dot, i) => {
+        dot.textContent = pinInput[i] ? '●' : '';
+      });
+
+      // Check PIN
+      if (pinInput.length === 4) {
+        if (pinInput === CONFIG.PARENT_PIN) {
+          appState.pinVerified = true;
+          pinInput = '';
+          render();
+        } else {
+          document.getElementById('pin-error').classList.remove('hidden');
+          pinInput = '';
+          document.querySelectorAll('.pin-dot').forEach(dot => dot.textContent = '');
+          setTimeout(() => document.getElementById('pin-error')?.classList.add('hidden'), 2000);
+        }
+      }
+    }
+
+    // Dashboard
+    function renderDashboard() {
+      const { data, lastUpdated, activeTab } = appState;
+      if (!data) return '<div class="text-white text-center p-8">No data available</div>';
+
+      const spelling = data.spelling || {};
+      const maths = data.maths || {};
+      const science = data.science || {};
+      const history = data.history || {};
+
+      const tabs = [
+        { id: 'overview', label: '📊 Overview', color: 'indigo' },
+        { id: 'english', label: '📚 English', color: 'purple' },
+        { id: 'maths', label: '🔢 Maths', color: 'blue' },
+        { id: 'science', label: '🔬 Science', color: 'emerald' },
+        { id: 'history', label: '📜 History', color: 'amber' }
+      ];
+
+      return `
+        <div class="min-h-screen p-4 pb-20">
+          <div class="max-w-4xl mx-auto">
+            <!-- Header -->
+            <div class="flex items-center justify-between mb-6">
+              <div>
+                <h1 class="text-2xl font-bold text-white">Alba's Progress</h1>
+                <p class="text-gray-400 text-sm">Last updated: ${lastUpdated ? lastUpdated.toLocaleTimeString() : 'Never'}</p>
+              </div>
+              <div class="flex gap-2">
+                <button onclick="loadData()" class="bg-white/10 text-white px-4 py-2 rounded-xl text-sm hover:bg-white/20">
+                  🔄 Refresh
+                </button>
+                <button onclick="logout()" class="bg-red-500/20 text-red-300 px-4 py-2 rounded-xl text-sm hover:bg-red-500/30">
+                  🚪 Logout
+                </button>
+              </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
+              ${tabs.map(t => `
+                <button onclick="setTab('${t.id}')" class="px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition-all ${activeTab === t.id ? 'bg-white text-gray-800' : 'bg-white/10 text-white/70 hover:bg-white/20'}">
+                  ${t.label}
+                </button>
+              `).join('')}
+            </div>
+
+            <!-- Content -->
+            <div class="space-y-6">
+              ${activeTab === 'overview' ? renderOverview(data) : ''}
+              ${activeTab === 'english' ? renderSubject('English', 'purple', spelling, 'spelling') : ''}
+              ${activeTab === 'maths' ? renderSubject('Maths', 'blue', maths, 'maths') : ''}
+              ${activeTab === 'science' ? renderSubject('Science', 'emerald', science, 'science') : ''}
+              ${activeTab === 'history' ? renderSubject('History', 'amber', history, 'history') : ''}
+            </div>
+          </div>
+        </div>
+
+        <!-- Environment Badge -->
+        <div class="fixed bottom-4 right-4 bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-bold">
+          ${CONFIG.ENV}
+        </div>
+      `;
+    }
+
+    function renderOverview(data) {
+      const spelling = data.spelling || {};
+      const maths = data.maths || {};
+      const science = data.science || {};
+      const history = data.history || {};
+
+      const totalCoins = (spelling.coins || 0) + (maths.coins || 0) + (science.coins || 0) + (history.coins || 0);
+      const totalTests = (spelling.testHistory?.length || 0) + (maths.testHistory?.length || 0) +
+                         (science.testHistory?.length || 0) + (history.testHistory?.length || 0);
+      const badges = data.earnedBadges?.length || 0;
+
+      return `
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="bg-gradient-to-br from-yellow-400 to-orange-500 rounded-2xl p-4 text-white">
+            <p class="text-3xl font-bold">${Math.round(totalCoins)}</p>
+            <p class="text-sm opacity-80">Total Coins</p>
+          </div>
+          <div class="bg-gradient-to-br from-blue-400 to-indigo-500 rounded-2xl p-4 text-white">
+            <p class="text-3xl font-bold">${totalTests}</p>
+            <p class="text-sm opacity-80">Tests Completed</p>
+          </div>
+          <div class="bg-gradient-to-br from-pink-400 to-purple-500 rounded-2xl p-4 text-white">
+            <p class="text-3xl font-bold">${badges}</p>
+            <p class="text-sm opacity-80">Badges Earned</p>
+          </div>
+          <div class="bg-gradient-to-br from-green-400 to-emerald-500 rounded-2xl p-4 text-white">
+            <p class="text-3xl font-bold">${data.bestStreak || 0}</p>
+            <p class="text-sm opacity-80">Best Streak</p>
+          </div>
+        </div>
+
+        <!-- Subject Breakdown -->
+        <div class="bg-white rounded-2xl p-6">
+          <h2 class="text-lg font-bold text-gray-800 mb-4">Subject Breakdown</h2>
+          <div class="space-y-4">
+            ${renderSubjectBar('English', 'purple', spelling.coins || 0, spelling.testHistory?.length || 0)}
+            ${renderSubjectBar('Maths', 'blue', maths.coins || 0, maths.testHistory?.length || 0)}
+            ${renderSubjectBar('Science', 'emerald', science.coins || 0, science.testHistory?.length || 0)}
+            ${renderSubjectBar('History', 'amber', history.coins || 0, history.testHistory?.length || 0)}
+          </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="bg-white rounded-2xl p-6">
+          <h2 class="text-lg font-bold text-gray-800 mb-4">Recent Tests</h2>
+          ${renderRecentTests(data)}
+        </div>
+
+        <!-- Last Test Date -->
+        <div class="bg-white/10 rounded-2xl p-4 text-center">
+          <p class="text-gray-400">Last test: <span class="text-white font-semibold">${data.lastTestDate || 'Never'}</span></p>
+        </div>
+      `;
+    }
+
+    function renderSubjectBar(name, color, coins, tests) {
+      const maxCoins = 500;
+      const pct = Math.min((coins / maxCoins) * 100, 100);
+      return `
+        <div>
+          <div class="flex justify-between text-sm mb-1">
+            <span class="font-semibold text-gray-700">${name}</span>
+            <span class="text-gray-500">${Math.round(coins)} coins · ${tests} tests</span>
+          </div>
+          <div class="h-3 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full bg-${color}-500 rounded-full transition-all" style="width: ${pct}%"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderRecentTests(data) {
+      const allTests = [
+        ...(data.spelling?.testHistory || []).map(t => ({...t, subject: 'English'})),
+        ...(data.maths?.testHistory || []).map(t => ({...t, subject: 'Maths'})),
+        ...(data.science?.testHistory || []).map(t => ({...t, subject: 'Science'})),
+        ...(data.history?.testHistory || []).map(t => ({...t, subject: 'History'}))
+      ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+
+      if (allTests.length === 0) {
+        return '<p class="text-gray-500 text-center py-4">No tests yet</p>';
+      }
+
+      return `
+        <div class="space-y-2">
+          ${allTests.map(t => `
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+              <div>
+                <span class="font-semibold text-gray-800">${t.subject}</span>
+                <span class="text-gray-400 text-sm ml-2">${t.date || 'Unknown date'}</span>
+              </div>
+              <div class="text-right">
+                <span class="font-bold ${t.score === t.total ? 'text-green-500' : 'text-gray-700'}">${t.score}/${t.total}</span>
+                <span class="text-yellow-500 ml-2">+${t.coinsEarned || 0} 🪙</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderSubject(name, color, subjectData, key) {
+      const tests = subjectData.testHistory || [];
+      const coins = subjectData.coins || 0;
+      const totalEarned = subjectData.totalCoinsEarned || 0;
+
+      // Calculate stats
+      const totalTests = tests.length;
+      const perfectTests = tests.filter(t => t.score === t.total).length;
+      const avgScore = totalTests > 0 ? tests.reduce((sum, t) => sum + (t.score / t.total), 0) / totalTests * 100 : 0;
+
+      // Find problem areas (items with < 50% accuracy)
+      const wordStats = subjectData.wordStats || {};
+      const problemAreas = Object.entries(wordStats)
+        .filter(([_, stats]) => stats.attempts > 0 && (stats.correct / stats.attempts) < 0.5)
+        .sort((a, b) => (a[1].correct / a[1].attempts) - (b[1].correct / b[1].attempts))
+        .slice(0, 10);
+
+      // Needs practice (50-75%)
+      const needsPractice = Object.entries(wordStats)
+        .filter(([_, stats]) => {
+          const acc = stats.attempts > 0 ? stats.correct / stats.attempts : 1;
+          return acc >= 0.5 && acc < 0.75;
+        })
+        .slice(0, 10);
+
+      return `
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="bg-white rounded-2xl p-4">
+            <p class="text-3xl font-bold text-${color}-600">${Math.round(coins)}</p>
+            <p class="text-sm text-gray-500">Current Coins</p>
+          </div>
+          <div class="bg-white rounded-2xl p-4">
+            <p class="text-3xl font-bold text-gray-800">${totalTests}</p>
+            <p class="text-sm text-gray-500">Tests Done</p>
+          </div>
+          <div class="bg-white rounded-2xl p-4">
+            <p class="text-3xl font-bold text-green-600">${perfectTests}</p>
+            <p class="text-sm text-gray-500">Perfect Scores</p>
+          </div>
+          <div class="bg-white rounded-2xl p-4">
+            <p class="text-3xl font-bold text-blue-600">${avgScore.toFixed(0)}%</p>
+            <p class="text-sm text-gray-500">Avg Accuracy</p>
+          </div>
+        </div>
+
+        <!-- Problem Areas -->
+        ${problemAreas.length > 0 ? `
+          <div class="bg-red-50 border border-red-200 rounded-2xl p-6">
+            <h3 class="text-lg font-bold text-red-800 mb-4">⚠️ Problem Areas (< 50%)</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              ${problemAreas.map(([word, stats]) => {
+                const acc = Math.round((stats.correct / stats.attempts) * 100);
+                return `
+                  <div class="flex justify-between items-center p-2 bg-white rounded-lg">
+                    <span class="font-medium text-gray-800">${word}</span>
+                    <span class="text-red-600 font-bold">${acc}%</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Needs Practice -->
+        ${needsPractice.length > 0 ? `
+          <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-6">
+            <h3 class="text-lg font-bold text-yellow-800 mb-4">📝 Needs Practice (50-75%)</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              ${needsPractice.map(([word, stats]) => {
+                const acc = Math.round((stats.correct / stats.attempts) * 100);
+                return `
+                  <div class="flex justify-between items-center p-2 bg-white rounded-lg">
+                    <span class="font-medium text-gray-800">${word}</span>
+                    <span class="text-yellow-600 font-bold">${acc}%</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Recent Tests -->
+        <div class="bg-white rounded-2xl p-6">
+          <h3 class="text-lg font-bold text-gray-800 mb-4">Recent ${name} Tests</h3>
+          ${tests.length > 0 ? `
+            <div class="space-y-2">
+              ${tests.slice(-10).reverse().map(t => `
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                  <span class="text-gray-600">${t.date || 'Unknown'}</span>
+                  <div>
+                    <span class="font-bold ${t.score === t.total ? 'text-green-500' : 'text-gray-700'}">${t.score}/${t.total}</span>
+                    <span class="text-yellow-500 ml-2">+${t.coinsEarned || 0}</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<p class="text-gray-500 text-center py-4">No tests yet</p>'}
+        </div>
+      `;
+    }
+
+    function setTab(tab) {
+      appState.activeTab = tab;
+      render();
+    }
+
+    function logout() {
+      appState.pinVerified = false;
+      pinInput = '';
+      render();
+    }
+
+    // Main render
+    function render() {
+      const app = document.getElementById('app');
+      if (appState.loading) {
+        app.innerHTML = `
+          <div class="min-h-screen flex items-center justify-center">
+            <div class="text-center text-white">
+              <div class="text-6xl mb-4 loading">📊</div>
+              <p>Loading Alba's progress...</p>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      app.innerHTML = appState.pinVerified ? renderDashboard() : renderPinEntry();
+    }
+
+    // Init
+    render();
+    loadData();
+
+    // Auto-refresh every 30 seconds when dashboard is visible
+    setInterval(() => {
+      if (appState.pinVerified) loadData();
+    }, 30000);
+  </script>
+</body>
+</html>
